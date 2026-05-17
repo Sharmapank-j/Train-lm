@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1 import auth, datasets, exports, health, inference, models, training
+from app.api.v1 import auth, datasets, exports, health, inference, models, pretrain, training
 from app.config.settings import settings
 from app.database.session import Base, engine
 
@@ -29,6 +29,7 @@ app.include_router(health.router, prefix=settings.api_prefix)
 app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(datasets.router, prefix=settings.api_prefix)
 app.include_router(training.router, prefix=settings.api_prefix)
+app.include_router(pretrain.router, prefix=settings.api_prefix)
 app.include_router(models.router, prefix=settings.api_prefix)
 app.include_router(exports.router, prefix=settings.api_prefix)
 app.include_router(inference.router, prefix=settings.api_prefix)

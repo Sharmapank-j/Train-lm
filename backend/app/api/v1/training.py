@@ -26,7 +26,7 @@ QUANTIZATION_TYPES = {"none", "4bit", "8bit"}
 class TrainingConfig(BaseModel):
     run_name: str = Field(..., min_length=1, max_length=100)
     base_model: str = Field(..., min_length=1, max_length=255)
-    dataset_id: str = Field(..., min_length=1)
+    dataset_id: str | None = Field(None, description="ID of an uploaded dataset; optional for dry-run jobs")
     method: Literal["lora", "qlora"] = "lora"
     learning_rate: float = Field(2e-4, gt=0, le=1.0)
     batch_size: int = Field(4, ge=1, le=64)

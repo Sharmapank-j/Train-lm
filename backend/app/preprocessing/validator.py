@@ -87,6 +87,11 @@ def validate_jsonl(content: bytes) -> ValidationReport:
 
     if report.total == 0:
         report.errors.append("Dataset contains no records")
+    elif report.valid == 0:
+        report.errors.append(
+            f"Dataset has no valid records ({report.invalid} invalid, "
+            f"{report.duplicates} duplicates, {report.empty} empty)"
+        )
     return report
 
 

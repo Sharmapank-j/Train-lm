@@ -9,6 +9,7 @@ alembic==1.13.3
 
 # Validation / serialization
 pydantic==2.9.2
+pydantic[email]==2.9.2
 pydantic-settings==2.6.1
 
 # Auth
