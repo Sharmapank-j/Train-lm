@@ -36,7 +36,7 @@ accelerate==1.2.1         # mixed-precision + multi-device training
 peft==0.14.0              # LoRA / QLoRA adapters
 bitsandbytes==0.45.0      # 4-bit / 8-bit quantisation (QLoRA)
 safetensors==0.4.5        # safe model serialisation
-sentencepiece==0.2.0      # SentencePiece tokenizer support
+sentencepiece==0.2.1      # SentencePiece tokenizer support (heap overflow fix)
 
 # Testing
 pytest==8.3.3
