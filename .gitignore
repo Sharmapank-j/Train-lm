@@ -229,6 +229,8 @@ exports/
 datasets/uploads/
 datasets/processed/
 datasets/reports/
+# User-uploaded raw files (per-user UUID directories)
+datasets/raw/*/
 *.gguf
 *.safetensors
 *.db

@@ -58,9 +58,9 @@ def validate_jsonl(content: bytes) -> ValidationReport:
         report.total += 1
         try:
             record = json.loads(line)
-        except json.JSONDecodeError as exc:
+        except json.JSONDecodeError:
             report.invalid += 1
-            report.warnings.append(f"Line {lineno}: malformed JSON — {exc.msg}")
+            report.warnings.append(f"Line {lineno}: malformed JSON")
             continue
 
         if not isinstance(record, dict):
