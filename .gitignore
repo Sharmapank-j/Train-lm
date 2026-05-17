@@ -216,3 +216,24 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Train-LM artifacts
+node_modules/
+frontend/node_modules/
+frontend/dist/
+backend/.venv/
+logs/
+checkpoints/
+models/
+exports/
+datasets/uploads/
+datasets/processed/
+datasets/reports/
+# User-uploaded raw files (per-user UUID directories)
+datasets/raw/*/
+*.gguf
+*.safetensors
+*.db
+*.sqlite
+cache/
+temp/

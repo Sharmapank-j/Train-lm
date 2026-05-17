@@ -1,0 +1,43 @@
+# Web framework
+fastapi==0.115.5
+uvicorn[standard]==0.32.0
+python-multipart==0.0.27
+
+# Database
+sqlalchemy==2.0.36
+alembic==1.13.3
+
+# Validation / serialization
+pydantic==2.9.2
+pydantic[email]==2.9.2
+pydantic-settings==2.6.1
+
+# Auth
+python-jose[cryptography]==3.4.0
+argon2-cffi==23.1.0
+
+# Async file I/O
+aiofiles==24.1.0
+
+# HTTP client (for Ollama / HuggingFace import)
+httpx==0.28.1
+
+# Telegram bot
+python-telegram-bot==21.9
+
+# ML stack — fine-tuning AND from-scratch pre-training
+# torch 2.6.0 — patched RCE (weights_only=True); install CPU wheel by default
+# On GPU hosts, users should install the matching CUDA torch build manually.
+torch==2.6.0
+transformers==4.48.0      # patched deserialization CVE
+tokenizers==0.21.0        # fast Rust-backed tokenizer library
+datasets==3.2.0           # HuggingFace Datasets for pre-training corpora
+accelerate==1.2.1         # mixed-precision + multi-device training
+peft==0.14.0              # LoRA / QLoRA adapters
+bitsandbytes==0.45.0      # 4-bit / 8-bit quantisation (QLoRA)
+safetensors==0.4.5        # safe model serialisation
+sentencepiece==0.2.1      # SentencePiece tokenizer support (heap overflow fix)
+
+# Testing
+pytest==8.3.3
+pytest-asyncio==0.24.0
