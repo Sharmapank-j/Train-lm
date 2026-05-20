@@ -190,7 +190,8 @@ def run_finetune(
         seed=cfg.seed,
     )
 
-    total_steps = max(1, len(dataset) // max(1, cfg.batch_size * cfg.gradient_accumulation_steps))
+    steps_per_epoch = max(1, len(dataset) // max(1, cfg.batch_size * cfg.gradient_accumulation_steps))
+    total_steps = max(1, steps_per_epoch * cfg.epochs)
     metrics_history: list[dict[str, Any]] = []
 
     class _ProgressCB(TrainerCallback):

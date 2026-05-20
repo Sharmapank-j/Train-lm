@@ -4,7 +4,7 @@ import asyncio
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.auth.deps import get_current_user
@@ -24,13 +24,11 @@ class ChatRequest(BaseModel):
     temperature: float = Field(0.7, ge=0.0, le=2.0)
     top_p: float = Field(0.9, ge=0.0, le=1.0)
 
-    @field_validator("model_name")
-    @classmethod
-    def require_model_identifier(cls, v, info):
-        data = info.data
-        if not v and not data.get("model_id"):
+    @model_validator(mode="after")
+    def require_model_identifier(self):
+        if not self.model_id and not self.model_name:
             raise ValueError("model_id or model_name is required")
-        return v
+        return self
 
 
 @router.get("/models")

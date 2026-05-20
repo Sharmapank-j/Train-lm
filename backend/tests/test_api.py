@@ -37,6 +37,7 @@ for p in (str(BACKEND), str(ROOT)):
 import os
 os.environ.setdefault("TRAIN_LM_DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("TRAIN_LM_SECRET_KEY", "test-secret-key-12345")
+os.environ.setdefault("TRAIN_LM_ALLOW_REMOTE_MODELS", "true")
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event

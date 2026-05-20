@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Route, Routes } from "react-router-dom";
 
@@ -289,7 +289,7 @@ const Chat = () => {
   const [messages, setMessages] = useState([]);
   const [error, setError] = useState("");
 
-  const loadModels = async () => {
+  const loadModels = useCallback(async () => {
     try {
       const data = await apiFetch("/inference/models");
       setModels(data.data.items);
@@ -299,11 +299,11 @@ const Chat = () => {
     } catch (err) {
       setError(err.message);
     }
-  };
+  }, [modelId]);
 
   useEffect(() => {
     loadModels();
-  }, []);
+  }, [loadModels]);
 
   const send = async (e) => {
     e.preventDefault();

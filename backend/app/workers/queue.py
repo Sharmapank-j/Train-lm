@@ -36,7 +36,7 @@ class Job:
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     started_at: datetime | None = None
     completed_at: datetime | None = None
-    task: asyncio.Task | None = field(default=None, repr=False, compare=False)
+    _task: asyncio.Task | None = field(default=None, repr=False, compare=False)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -59,8 +59,7 @@ class JobQueue:
         self._jobs: dict[str, Job] = {}
         self._queue: asyncio.Queue[str] = asyncio.Queue()
         self._max_workers = max_workers
-        self._running = 0
-        self._lock = asyncio.Lock()
+        self._semaphore = asyncio.Semaphore(max_workers)
 
     def submit(
         self,
@@ -69,35 +68,28 @@ class JobQueue:
     ) -> Job:
         job = Job(job_type=job_type)
         self._jobs[job.id] = job
-        job.task = asyncio.create_task(self._dispatch(job, coro_factory))
+        job._task = asyncio.create_task(self._dispatch(job, coro_factory))
         logger.info("job.submitted", extra={"job_id": job.id, "job_type": job_type})
         return job
 
     async def _dispatch(self, job: Job, coro_factory: Callable[[Job], Awaitable[dict[str, Any]]]) -> None:
-        async with self._lock:
-            # Simple concurrency cap: wait if at max workers
-            while self._running >= self._max_workers:
-                await asyncio.sleep(0.1)
-            self._running += 1
-
-        job.state = JobState.running
-        job.started_at = datetime.now(UTC)
-        try:
-            result = await coro_factory(job)
-            job.result = result or {}
-            job.state = JobState.completed
-            job.progress = 1.0
-        except asyncio.CancelledError:
-            job.state = JobState.cancelled
-        except Exception as exc:  # noqa: BLE001
-            job.state = JobState.failed
-            job.error = str(exc)
-            logger.exception("job.failed", extra={"job_id": job.id})
-        finally:
-            job.completed_at = datetime.now(UTC)
-            async with self._lock:
-                self._running -= 1
-            logger.info("job.finished", extra={"job_id": job.id, "state": job.state})
+        async with self._semaphore:
+            job.state = JobState.running
+            job.started_at = datetime.now(UTC)
+            try:
+                result = await coro_factory(job)
+                job.result = result or {}
+                job.state = JobState.completed
+                job.progress = 1.0
+            except asyncio.CancelledError:
+                job.state = JobState.cancelled
+            except Exception as exc:  # noqa: BLE001
+                job.state = JobState.failed
+                job.error = str(exc)
+                logger.exception("job.failed", extra={"job_id": job.id})
+            finally:
+                job.completed_at = datetime.now(UTC)
+                logger.info("job.finished", extra={"job_id": job.id, "state": job.state})
 
     def get(self, job_id: str) -> Job | None:
         return self._jobs.get(job_id)
@@ -106,8 +98,8 @@ class JobQueue:
         job = self._jobs.get(job_id)
         if not job:
             return False
-        if job.task and not job.task.done():
-            job.task.cancel()
+        if job._task and not job._task.done():
+            job._task.cancel()
             job.state = JobState.cancelled
             return True
         return False

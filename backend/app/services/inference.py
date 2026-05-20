@@ -100,8 +100,9 @@ class InferenceManager:
             do_sample=do_sample,
             pad_token_id=tokenizer.eos_token_id,
         )
-        decoded = tokenizer.decode(output[0], skip_special_tokens=True)
-        return decoded[len(prompt):].lstrip()
+        input_len = inputs["input_ids"].shape[-1]
+        generated_ids = output[0][input_len:]
+        return tokenizer.decode(generated_ids, skip_special_tokens=True).lstrip()
 
 
 _manager = InferenceManager()

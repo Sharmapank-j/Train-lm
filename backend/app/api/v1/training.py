@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -16,6 +17,7 @@ from app.models.orm import Dataset, Model, ModelVersion, TrainingJob, User
 from app.workers.queue import get_job_queue
 
 router = APIRouter(prefix="/training", tags=["training"])
+_TRAINING_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 
 SUPPORTED_MODELS = {
     "llama", "mistral", "gemma", "phi", "qwen",
@@ -89,7 +91,7 @@ async def queue_training_job(
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=error_response("FORBIDDEN", "Dataset access denied"))
 
     base_model_path = cfg.base_model
-    if dataset and not settings.allow_remote_models:
+    if not settings.allow_remote_models:
         root = settings.model_root.resolve()
         resolved = (settings.model_root / cfg.base_model).resolve()
         if resolved != root and root not in resolved.parents:
@@ -181,7 +183,7 @@ async def queue_training_job(
 
             try:
                 result = await asyncio.get_event_loop().run_in_executor(
-                    None, run_finetune, finetune_cfg, _progress
+                    _TRAINING_EXECUTOR, run_finetune, finetune_cfg, _progress
                 )
             except asyncio.CancelledError:
                 _update_job(status="cancelled", completed_at=datetime.now(UTC))
