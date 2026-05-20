@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -25,7 +26,7 @@ class ChatRequest(BaseModel):
 
     @field_validator("model_name")
     @classmethod
-    def require_model(cls, v, info):
+    def require_model_identifier(cls, v, info):
         data = info.data
         if not v and not data.get("model_id"):
             raise ValueError("model_id or model_name is required")
@@ -101,7 +102,8 @@ async def chat(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_response("NOT_FOUND", "Model version not found"))
 
     manager = get_inference_manager()
-    completion = manager.generate(
+    completion = await asyncio.to_thread(
+        manager.generate,
         cache_key=version.id,
         base_model=model.base_model,
         adapter_path=version.adapter_path or None,

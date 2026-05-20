@@ -203,7 +203,8 @@ async def queue_tokenizer_job(
                 None, train_tokenizer, Path(payload.corpus_path), output_dir, cfg
             )
         except Exception as exc:  # noqa: BLE001
-            _update(status="failed", error=str(exc), completed_at=datetime.now(UTC))
+            detail = f"tokenizer job {job_record.id} failed ({payload.corpus_path}): {exc}"
+            _update(status="failed", error=detail, completed_at=datetime.now(UTC))
             raise
 
         _update(
@@ -365,7 +366,8 @@ async def queue_pretrain_job(
                 None, run_pretrain, pretrain_cfg, _progress
             )
         except Exception as exc:  # noqa: BLE001
-            _update(status="failed", error=str(exc), completed_at=datetime.now(UTC))
+            detail = f"pretrain job {job_record.id} failed ({payload.arch_preset or 'custom'}): {exc}"
+            _update(status="failed", error=detail, completed_at=datetime.now(UTC))
             raise
 
         _update(

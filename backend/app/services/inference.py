@@ -46,10 +46,16 @@ class InferenceManager:
         base_model_path = base_model
         if local_only:
             from pathlib import Path
-            if not Path(base_model).exists():
-                candidate = settings.model_root / base_model
-                if candidate.exists():
-                    base_model_path = str(candidate)
+            from app.utils.paths import safe_join
+
+            root = settings.model_root.resolve()
+            candidate = Path(base_model)
+            if candidate.is_absolute():
+                resolved = candidate.resolve()
+                if resolved == root or root in resolved.parents:
+                    base_model_path = str(resolved)
+            else:
+                base_model_path = str(safe_join(root, base_model))
         tokenizer = AutoTokenizer.from_pretrained(base_model_path, local_files_only=local_only)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
