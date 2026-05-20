@@ -88,10 +88,22 @@ async def queue_training_job(
         if dataset.owner_id != current_user.id and not dataset.is_public:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=error_response("FORBIDDEN", "Dataset access denied"))
 
+    base_model_path = cfg.base_model
+    if dataset and not settings.allow_remote_models:
+        model_path = Path(cfg.base_model)
+        if not model_path.exists():
+            alt_path = settings.model_root / cfg.base_model
+            if not alt_path.exists():
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=error_response("MODEL_NOT_FOUND", "Base model not found locally"),
+                )
+            base_model_path = str(alt_path)
+
     job_record = TrainingJob(
         owner_id=current_user.id,
         run_name=cfg.run_name,
-        base_model=cfg.base_model,
+        base_model=base_model_path,
         dataset_id=cfg.dataset_id,
         method=cfg.method,
         config_snapshot=cfg.model_dump(),
@@ -133,7 +145,7 @@ async def queue_training_job(
             cfg_payload = cfg.model_dump()
             finetune_cfg = FinetuneConfig(
                 run_name=cfg.run_name,
-                base_model=cfg.base_model,
+                base_model=base_model_path,
                 dataset_path=dataset.storage_path,
                 output_dir=str(settings.checkpoint_root / "finetune"),
                 method=cfg.method,
@@ -189,7 +201,7 @@ async def queue_training_job(
                         owner_id=current_user.id,
                         name=cfg.run_name,
                         description=cfg.notes,
-                        base_model=cfg.base_model,
+                        base_model=base_model_path,
                         model_type="adapter",
                     )
                     s.add(model)
@@ -217,7 +229,7 @@ async def queue_training_job(
             "bg_job_id": bg_job.id if bg_job else "",
             "run_name": job_record.run_name,
             "state": "queued",
-            "base_model": cfg.base_model,
+            "base_model": base_model_path,
             "method": cfg.method,
             "dataset_id": cfg.dataset_id,
         },

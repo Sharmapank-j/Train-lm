@@ -131,7 +131,7 @@ def run_finetune(
     model = AutoModelForCausalLM.from_pretrained(
         cfg.base_model,
         quantization_config=quantization_config,
-        device_map="auto",
+        device_map="auto" if cfg.method == "qlora" else None,
         local_files_only=local_only,
     )
 
@@ -157,6 +157,20 @@ def run_finetune(
     output_dir = Path(cfg.output_dir) / cfg.run_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    optim_map = {
+        "adamw": "adamw_torch",
+        "adam": "adamw_torch",
+        "sgd": "sgd",
+        "adafactor": "adafactor",
+    }
+    scheduler_map = {
+        "cosine": "cosine",
+        "linear": "linear",
+        "constant": "constant",
+        "warmup_cosine": "cosine",
+    }
+    use_fp16 = cfg.mixed_precision and torch.cuda.is_available()
+
     training_args = TrainingArguments(
         output_dir=str(output_dir),
         run_name=cfg.run_name,
@@ -167,11 +181,11 @@ def run_finetune(
         warmup_steps=cfg.warmup_steps,
         logging_steps=cfg.logging_steps,
         save_steps=cfg.save_steps,
-        lr_scheduler_type=cfg.scheduler,
-        optim=cfg.optimizer,
+        lr_scheduler_type=scheduler_map.get(cfg.scheduler, "cosine"),
+        optim=optim_map.get(cfg.optimizer, "adamw_torch"),
         report_to=[],
         save_total_limit=2,
-        fp16=cfg.mixed_precision,
+        fp16=use_fp16,
         bf16=False,
         seed=cfg.seed,
     )

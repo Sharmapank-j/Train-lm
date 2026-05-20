@@ -43,12 +43,19 @@ class InferenceManager:
             raise ImportError("Install ML stack: pip install torch transformers peft") from exc
 
         local_only = not settings.allow_remote_models
-        tokenizer = AutoTokenizer.from_pretrained(base_model, local_files_only=local_only)
+        base_model_path = base_model
+        if local_only:
+            from pathlib import Path
+            if not Path(base_model).exists():
+                candidate = settings.model_root / base_model
+                if candidate.exists():
+                    base_model_path = str(candidate)
+        tokenizer = AutoTokenizer.from_pretrained(base_model_path, local_files_only=local_only)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
 
         device = self._select_device()
-        model = AutoModelForCausalLM.from_pretrained(base_model, local_files_only=local_only)
+        model = AutoModelForCausalLM.from_pretrained(base_model_path, local_files_only=local_only)
 
         if adapter_path:
             model = PeftModel.from_pretrained(model, adapter_path)
