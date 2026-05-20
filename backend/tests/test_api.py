@@ -436,6 +436,24 @@ class TestTrainingEndpoints:
         body = r.json()
         assert body["data"]["state"] == "queued"
 
+    def test_training_logs_and_metrics(self):
+        r = client.post(
+            "/api/v1/training/jobs",
+            json={
+                "run_name": "log-run",
+                "base_model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+                "method": "lora",
+            },
+            headers=_auth(self.token),
+        )
+        job_id = r.json()["data"]["id"]
+        logs = client.get(f"/api/v1/training/jobs/{job_id}/logs", headers=_auth(self.token))
+        assert logs.status_code == 200
+        assert "lines" in logs.json()["data"]
+        metrics = client.get(f"/api/v1/training/jobs/{job_id}/metrics", headers=_auth(self.token))
+        assert metrics.status_code == 200
+        assert "progress" in metrics.json()["data"]
+
     def test_list_training_jobs(self):
         r = client.get("/api/v1/training/jobs", headers=_auth(self.token))
         assert r.status_code == 200
@@ -448,6 +466,20 @@ class TestTrainingEndpoints:
     def test_training_requires_auth(self):
         r = client.get("/api/v1/training/jobs")
         assert r.status_code in (401, 403)
+
+
+# ===========================================================================
+# 9.5. Inference endpoints
+# ===========================================================================
+
+class TestInferenceEndpoints:
+    def setup_method(self):
+        self.token = _register_and_login(f"infer_{id(self)}")
+
+    def test_list_inference_models(self):
+        r = client.get("/api/v1/inference/models", headers=_auth(self.token))
+        assert r.status_code == 200
+        assert "items" in r.json()["data"]
 
 
 # ===========================================================================
@@ -671,4 +703,3 @@ class TestPretrainEndpoints:
     def test_pretrain_requires_auth(self):
         r = client.get("/api/v1/pretrain/jobs")
         assert r.status_code in (401, 403)
-

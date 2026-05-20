@@ -69,7 +69,7 @@ class JobQueue:
     ) -> Job:
         job = Job(job_type=job_type)
         self._jobs[job.id] = job
-        asyncio.ensure_future(self._dispatch(job, coro_factory))
+        job._task = asyncio.create_task(self._dispatch(job, coro_factory))
         logger.info("job.submitted", extra={"job_id": job.id, "job_type": job_type})
         return job
 
@@ -77,7 +77,7 @@ class JobQueue:
         async with self._lock:
             # Simple concurrency cap: wait if at max workers
             while self._running >= self._max_workers:
-                pass
+                await asyncio.sleep(0.1)
             self._running += 1
 
         job.state = JobState.running
@@ -127,7 +127,8 @@ _queue: JobQueue | None = None
 def get_job_queue() -> JobQueue:
     global _queue
     if _queue is None:
-        _queue = JobQueue(max_workers=2)
+        from app.config.settings import settings
+        _queue = JobQueue(max_workers=settings.max_concurrent_jobs)
     return _queue
 
 

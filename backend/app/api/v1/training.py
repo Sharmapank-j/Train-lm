@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -7,9 +9,10 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.auth.deps import get_current_user
+from app.config.settings import settings
 from app.core.contracts import error_response, success_response
-from app.database.session import get_db
-from app.models.orm import TrainingJob, User
+from app.database.session import SessionLocal, get_db
+from app.models.orm import Dataset, Model, ModelVersion, TrainingJob, User
 from app.workers.queue import get_job_queue
 
 router = APIRouter(prefix="/training", tags=["training"])
@@ -77,11 +80,20 @@ async def queue_training_job(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
+    dataset = None
+    if cfg.dataset_id:
+        dataset = db.get(Dataset, cfg.dataset_id)
+        if not dataset or dataset.is_deleted:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_response("NOT_FOUND", "Dataset not found"))
+        if dataset.owner_id != current_user.id and not dataset.is_public:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=error_response("FORBIDDEN", "Dataset access denied"))
+
     job_record = TrainingJob(
         owner_id=current_user.id,
         run_name=cfg.run_name,
         base_model=cfg.base_model,
         dataset_id=cfg.dataset_id,
+        method=cfg.method,
         config_snapshot=cfg.model_dump(),
         notes=cfg.notes,
         status="queued",
@@ -90,24 +102,124 @@ async def queue_training_job(
     db.commit()
     db.refresh(job_record)
 
-    async def _train_stub(job):
-        # Real training would invoke trainer/training/ here
-        import asyncio
-        job.progress = 0.1
-        await asyncio.sleep(0)
-        return {"status": "queued_for_training", "db_job_id": job_record.id}
+    bg_job = None
+    if dataset:
+        async def _train_job(job):
+            from trainer.finetune.engine import FinetuneConfig, run_finetune
+            import asyncio
 
-    bg_job = get_job_queue().submit(_train_stub, job_type="training")
+            log_dir = settings.log_root / "training"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_path = log_dir / f"{job_record.id}.log"
+
+            def _append_log(message: str) -> None:
+                timestamp = datetime.now(UTC).isoformat()
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                with log_path.open("a", encoding="utf-8") as fh:
+                    fh.write(f"[{timestamp}] {message}\n")
+
+            def _update_job(**fields):
+                with SessionLocal() as s:
+                    rec = s.get(TrainingJob, job_record.id)
+                    if not rec:
+                        return
+                    for key, value in fields.items():
+                        setattr(rec, key, value)
+                    s.commit()
+
+            _update_job(status="running", started_at=datetime.now(UTC), log_path=str(log_path))
+            _append_log("training started")
+
+            cfg_payload = cfg.model_dump()
+            finetune_cfg = FinetuneConfig(
+                run_name=cfg.run_name,
+                base_model=cfg.base_model,
+                dataset_path=dataset.storage_path,
+                output_dir=str(settings.checkpoint_root / "finetune"),
+                method=cfg.method,
+                quantization_type=cfg.quantization_type,
+                max_seq_length=cfg.max_seq_length,
+                learning_rate=cfg.learning_rate,
+                batch_size=cfg.batch_size,
+                gradient_accumulation_steps=cfg.gradient_accumulation_steps,
+                epochs=cfg.epochs,
+                warmup_steps=cfg.warmup_steps,
+                save_steps=cfg.save_steps,
+                logging_steps=cfg.logging_steps,
+                optimizer=cfg.optimizer,
+                scheduler=cfg.scheduler,
+                lora_rank=cfg.lora_rank,
+                lora_alpha=cfg.lora_alpha,
+                lora_dropout=cfg.lora_dropout,
+                target_modules=cfg.target_modules,
+                mixed_precision=cfg.mixed_precision,
+                gradient_checkpointing=cfg.gradient_checkpointing,
+                seed=cfg.seed,
+                allow_remote_model=settings.allow_remote_models,
+            )
+
+            def _progress(fraction: float, metrics: dict[str, object]):
+                job.progress = fraction
+                _update_job(progress=fraction, metrics={**metrics, "latest_step": metrics.get("step")})
+                _append_log(f"progress {fraction:.2%} | {metrics}")
+
+            try:
+                result = await asyncio.get_event_loop().run_in_executor(
+                    None, run_finetune, finetune_cfg, _progress
+                )
+            except asyncio.CancelledError:
+                _update_job(status="cancelled", completed_at=datetime.now(UTC))
+                _append_log("training cancelled")
+                raise
+            except Exception as exc:  # noqa: BLE001
+                _update_job(status="failed", error=str(exc), completed_at=datetime.now(UTC))
+                _append_log(f"training failed: {exc}")
+                raise
+
+            with SessionLocal() as s:
+                rec = s.get(TrainingJob, job_record.id)
+                if rec:
+                    rec.status = "completed"
+                    rec.progress = 1.0
+                    rec.metrics = result
+                    rec.adapter_path = result.get("adapter_path", "")
+                    rec.checkpoint_path = result.get("output_dir", "")
+                    rec.completed_at = datetime.now(UTC)
+                    model = Model(
+                        owner_id=current_user.id,
+                        name=cfg.run_name,
+                        description=cfg.notes,
+                        base_model=cfg.base_model,
+                        model_type="adapter",
+                    )
+                    s.add(model)
+                    s.flush()
+                    version = ModelVersion(
+                        model_id=model.id,
+                        version=1,
+                        adapter_path=rec.adapter_path,
+                        config_snapshot=cfg_payload,
+                        metrics=result,
+                    )
+                    s.add(version)
+                    s.commit()
+            _append_log("training completed")
+            return {"status": "completed", "db_job_id": job_record.id}
+
+        bg_job = get_job_queue().submit(_train_job, job_type="training")
+        job_record.bg_job_id = bg_job.id
+        db.commit()
 
     return success_response(
         "training job queued",
         {
             "id": job_record.id,
-            "bg_job_id": bg_job.id,
+            "bg_job_id": bg_job.id if bg_job else "",
             "run_name": job_record.run_name,
             "state": "queued",
             "base_model": cfg.base_model,
             "method": cfg.method,
+            "dataset_id": cfg.dataset_id,
         },
     )
 
@@ -136,6 +248,8 @@ def list_training_jobs(
                     "run_name": j.run_name,
                     "base_model": j.base_model,
                     "status": j.status,
+                    "progress": j.progress,
+                    "dataset_id": j.dataset_id,
                     "created_at": j.created_at.isoformat(),
                 }
                 for j in items
@@ -168,12 +282,66 @@ def get_training_job(
             "run_name": job.run_name,
             "base_model": job.base_model,
             "status": job.status,
+            "progress": job.progress,
             "config_snapshot": job.config_snapshot,
             "metrics": job.metrics,
             "checkpoint_path": job.checkpoint_path,
             "adapter_path": job.adapter_path,
+            "log_path": job.log_path,
             "error": job.error,
             "notes": job.notes,
             "created_at": job.created_at.isoformat(),
+            "started_at": job.started_at.isoformat() if job.started_at else None,
+            "completed_at": job.completed_at.isoformat() if job.completed_at else None,
         },
     )
+
+
+@router.get("/jobs/{job_id}/logs")
+def get_training_logs(
+    job_id: str,
+    tail: int = Query(200, ge=1, le=2000),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    job = db.get(TrainingJob, job_id)
+    if not job or job.owner_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_response("NOT_FOUND", "Job not found"))
+    if not job.log_path:
+        return success_response("training logs fetched", {"lines": []})
+    log_path = Path(job.log_path)
+    if not log_path.exists():
+        return success_response("training logs fetched", {"lines": []})
+    lines = log_path.read_text(encoding="utf-8").splitlines()
+    return success_response("training logs fetched", {"lines": lines[-tail:]})
+
+
+@router.post("/jobs/{job_id}/cancel")
+def cancel_training_job(
+    job_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    job = db.get(TrainingJob, job_id)
+    if not job or job.owner_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_response("NOT_FOUND", "Job not found"))
+    if not job.bg_job_id:
+        return success_response("training job cancelled", {"id": job_id, "cancelled": False})
+    cancelled = get_job_queue().cancel(job.bg_job_id)
+    if cancelled:
+        job.status = "cancelled"
+        job.completed_at = datetime.now(UTC)
+        db.commit()
+    return success_response("training job cancelled", {"id": job_id, "cancelled": cancelled})
+
+
+@router.get("/jobs/{job_id}/metrics")
+def get_training_metrics(
+    job_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    job = db.get(TrainingJob, job_id)
+    if not job or job.owner_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_response("NOT_FOUND", "Job not found"))
+    return success_response("training metrics fetched", {"metrics": job.metrics, "progress": job.progress})

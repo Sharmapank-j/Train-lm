@@ -13,6 +13,7 @@ services:
       - ./datasets:/app/datasets
       - ./models:/app/models
       - ./exports:/app/exports
+      - ./checkpoints:/app/checkpoints
       - ./logs:/app/logs
 
   frontend:
