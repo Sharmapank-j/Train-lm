@@ -13,7 +13,6 @@ from app.config.settings import settings
 from app.core.contracts import error_response, success_response
 from app.database.session import SessionLocal, get_db
 from app.models.orm import Dataset, Model, ModelVersion, TrainingJob, User
-from app.utils.paths import safe_join
 from app.workers.queue import get_job_queue
 
 router = APIRouter(prefix="/training", tags=["training"])
@@ -91,9 +90,9 @@ async def queue_training_job(
 
     base_model_path = cfg.base_model
     if dataset and not settings.allow_remote_models:
-        try:
-            resolved = safe_join(settings.model_root, cfg.base_model)
-        except ValueError:
+        root = settings.model_root.resolve()
+        resolved = (settings.model_root / cfg.base_model).resolve()
+        if resolved != root and root not in resolved.parents:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=error_response("INVALID_MODEL_PATH", "Base model path traversal blocked"),
@@ -188,7 +187,7 @@ async def queue_training_job(
                 _update_job(status="cancelled", completed_at=datetime.now(UTC))
                 _append_log(f"training cancelled (job_id={job_record.id})")
                 raise
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 detail = f"training failed (job_id={job_record.id}): {exc}"
                 _update_job(status="failed", error=detail, completed_at=datetime.now(UTC))
                 _append_log(detail)

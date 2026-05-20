@@ -202,7 +202,7 @@ async def queue_tokenizer_job(
             result = await asyncio.get_event_loop().run_in_executor(
                 None, train_tokenizer, Path(payload.corpus_path), output_dir, cfg
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             detail = f"tokenizer job {job_record.id} failed ({payload.corpus_path}): {exc}"
             _update(status="failed", error=detail, completed_at=datetime.now(UTC))
             raise
@@ -365,7 +365,7 @@ async def queue_pretrain_job(
             result = await asyncio.get_event_loop().run_in_executor(
                 None, run_pretrain, pretrain_cfg, _progress
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             detail = f"pretrain job {job_record.id} failed ({payload.arch_preset or 'custom'}): {exc}"
             _update(status="failed", error=detail, completed_at=datetime.now(UTC))
             raise

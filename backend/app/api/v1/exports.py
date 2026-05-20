@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from app.auth.deps import get_current_user
 from app.core.contracts import success_response
@@ -20,7 +21,7 @@ class ExportRequest(BaseModel):
 @router.post("/gguf")
 async def queue_export(
     payload: ExportRequest,
-    db=Depends(get_db),
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
     job = ExportJob(

@@ -36,7 +36,7 @@ class Job:
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     started_at: datetime | None = None
     completed_at: datetime | None = None
-    _task: asyncio.Task | None = field(default=None, repr=False, compare=False)
+    task: asyncio.Task | None = field(default=None, repr=False, compare=False)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -69,7 +69,7 @@ class JobQueue:
     ) -> Job:
         job = Job(job_type=job_type)
         self._jobs[job.id] = job
-        job._task = asyncio.create_task(self._dispatch(job, coro_factory))
+        job.task = asyncio.create_task(self._dispatch(job, coro_factory))
         logger.info("job.submitted", extra={"job_id": job.id, "job_type": job_type})
         return job
 
@@ -106,8 +106,8 @@ class JobQueue:
         job = self._jobs.get(job_id)
         if not job:
             return False
-        if job._task and not job._task.done():
-            job._task.cancel()
+        if job.task and not job.task.done():
+            job.task.cancel()
             job.state = JobState.cancelled
             return True
         return False
