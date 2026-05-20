@@ -185,20 +185,34 @@ async def queue_tokenizer_job(
             byte_level=payload.byte_level,
         )
         bg_job.progress = 0.1
-        result = await asyncio.get_event_loop().run_in_executor(
-            None, train_tokenizer, Path(payload.corpus_path), output_dir, cfg
-        )
-        # Update DB record
+
         from app.database.session import SessionLocal
         from datetime import datetime, UTC
-        with SessionLocal() as s:
-            rec = s.get(TokenizerJob, job_record.id)
-            if rec:
-                rec.status = "completed"
-                rec.output_dir = result["output_dir"]
-                rec.result = result
-                rec.completed_at = datetime.now(UTC)
-                s.commit()
+
+        def _update(**fields):
+            with SessionLocal() as s:
+                rec = s.get(TokenizerJob, job_record.id)
+                if rec:
+                    for key, value in fields.items():
+                        setattr(rec, key, value)
+                    s.commit()
+
+        _update(status="running", started_at=datetime.now(UTC))
+        try:
+            result = await asyncio.get_event_loop().run_in_executor(
+                None, train_tokenizer, Path(payload.corpus_path), output_dir, cfg
+            )
+        except Exception as exc:
+            detail = f"tokenizer job {job_record.id} failed ({payload.corpus_path}): {exc}"
+            _update(status="failed", error=detail, completed_at=datetime.now(UTC))
+            raise
+
+        _update(
+            status="completed",
+            output_dir=result["output_dir"],
+            result=result,
+            completed_at=datetime.now(UTC),
+        )
         bg_job.progress = 1.0
         return result
 
@@ -331,27 +345,41 @@ async def queue_pretrain_job(
             output_dir=str(settings.checkpoint_root / "pretrain"),
         )
 
+        from app.database.session import SessionLocal
+        from datetime import datetime, UTC
+
+        def _update(**fields):
+            with SessionLocal() as s:
+                rec = s.get(PretrainJob, job_record.id)
+                if rec:
+                    for key, value in fields.items():
+                        setattr(rec, key, value)
+                    s.commit()
+
+        _update(status="running", started_at=datetime.now(UTC))
+
         def _progress(fraction, metrics):
             bg_job.progress = fraction
 
-        result = await asyncio.get_event_loop().run_in_executor(
-            None, run_pretrain, pretrain_cfg, _progress
-        )
+        try:
+            result = await asyncio.get_event_loop().run_in_executor(
+                None, run_pretrain, pretrain_cfg, _progress
+            )
+        except Exception as exc:
+            detail = f"pretrain job {job_record.id} failed ({payload.arch_preset or 'custom'}): {exc}"
+            _update(status="failed", error=detail, completed_at=datetime.now(UTC))
+            raise
 
-        from app.database.session import SessionLocal
-        from datetime import datetime, UTC
-        with SessionLocal() as s:
-            rec = s.get(PretrainJob, job_record.id)
-            if rec:
-                rec.status = "completed"
-                rec.output_dir = result.get("final_model_path", "")
-                rec.metrics = {
-                    "total_params": result.get("total_params"),
-                    "train_loss": result.get("train_loss"),
-                    "train_runtime": result.get("train_runtime"),
-                }
-                rec.completed_at = datetime.now(UTC)
-                s.commit()
+        _update(
+            status="completed",
+            output_dir=result.get("final_model_path", ""),
+            metrics={
+                "total_params": result.get("total_params"),
+                "train_loss": result.get("train_loss"),
+                "train_runtime": result.get("train_runtime"),
+            },
+            completed_at=datetime.now(UTC),
+        )
         return result
 
     bg_job = get_job_queue().submit(_run_pretrain, job_type="pretrain")

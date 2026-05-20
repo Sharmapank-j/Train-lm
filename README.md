@@ -35,14 +35,21 @@ docker compose up --build
 
 ## Current foundation scope
 
-This repository currently provides a production-oriented scaffold with:
+This repository currently provides a production-oriented MVP with:
 
 - standardized API success/error response contracts
-- starter API routes for auth, datasets, training, exports, models, inference, health
+- API routes for auth, datasets, training, exports, models, inference, health
 - safe path handling helper for artifact storage protections
-- initial frontend dashboard shell and dataset route
+- frontend dashboard for auth, datasets, training jobs, model registry, chat
 - Docker and script entrypoints for local and Termux workflows
 - starter tests for contract and safety primitives
+ 
+## MVP capabilities
+
+- Dataset upload + validation (JSONL)
+- LoRA / QLoRA training jobs with logs and metrics
+- Model registry with adapter versions
+- Local inference / chat endpoint for registered adapters
 
 ## Testing
 

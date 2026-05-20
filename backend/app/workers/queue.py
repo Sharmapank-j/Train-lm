@@ -59,8 +59,7 @@ class JobQueue:
         self._jobs: dict[str, Job] = {}
         self._queue: asyncio.Queue[str] = asyncio.Queue()
         self._max_workers = max_workers
-        self._running = 0
-        self._lock = asyncio.Lock()
+        self._semaphore = asyncio.Semaphore(max_workers)
 
     def submit(
         self,
@@ -69,35 +68,28 @@ class JobQueue:
     ) -> Job:
         job = Job(job_type=job_type)
         self._jobs[job.id] = job
-        asyncio.ensure_future(self._dispatch(job, coro_factory))
+        job._task = asyncio.create_task(self._dispatch(job, coro_factory))
         logger.info("job.submitted", extra={"job_id": job.id, "job_type": job_type})
         return job
 
     async def _dispatch(self, job: Job, coro_factory: Callable[[Job], Awaitable[dict[str, Any]]]) -> None:
-        async with self._lock:
-            # Simple concurrency cap: wait if at max workers
-            while self._running >= self._max_workers:
-                pass
-            self._running += 1
-
-        job.state = JobState.running
-        job.started_at = datetime.now(UTC)
-        try:
-            result = await coro_factory(job)
-            job.result = result or {}
-            job.state = JobState.completed
-            job.progress = 1.0
-        except asyncio.CancelledError:
-            job.state = JobState.cancelled
-        except Exception as exc:  # noqa: BLE001
-            job.state = JobState.failed
-            job.error = str(exc)
-            logger.exception("job.failed", extra={"job_id": job.id})
-        finally:
-            job.completed_at = datetime.now(UTC)
-            async with self._lock:
-                self._running -= 1
-            logger.info("job.finished", extra={"job_id": job.id, "state": job.state})
+        async with self._semaphore:
+            job.state = JobState.running
+            job.started_at = datetime.now(UTC)
+            try:
+                result = await coro_factory(job)
+                job.result = result or {}
+                job.state = JobState.completed
+                job.progress = 1.0
+            except asyncio.CancelledError:
+                job.state = JobState.cancelled
+            except Exception as exc:  # noqa: BLE001
+                job.state = JobState.failed
+                job.error = str(exc)
+                logger.exception("job.failed", extra={"job_id": job.id})
+            finally:
+                job.completed_at = datetime.now(UTC)
+                logger.info("job.finished", extra={"job_id": job.id, "state": job.state})
 
     def get(self, job_id: str) -> Job | None:
         return self._jobs.get(job_id)
@@ -127,7 +119,8 @@ _queue: JobQueue | None = None
 def get_job_queue() -> JobQueue:
     global _queue
     if _queue is None:
-        _queue = JobQueue(max_workers=2)
+        from app.config.settings import settings
+        _queue = JobQueue(max_workers=settings.max_concurrent_jobs)
     return _queue
 
 

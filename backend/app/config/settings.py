@@ -36,6 +36,7 @@ class Settings(BaseSettings):
 
     # Inference
     llama_cli_path: str = "./llama.cpp/build/bin/llama-cli"
+    allow_remote_models: bool = False
 
     # Telegram
     telegram_token: str = ""

@@ -225,6 +225,8 @@ backend/.venv/
 logs/
 checkpoints/
 models/
+!backend/app/models/
+!backend/app/models/**
 exports/
 datasets/uploads/
 datasets/processed/
